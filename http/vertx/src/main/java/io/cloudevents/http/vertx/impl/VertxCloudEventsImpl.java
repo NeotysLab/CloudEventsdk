@@ -40,6 +40,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public final class VertxCloudEventsImpl implements VertxCloudEvents {
@@ -143,36 +144,36 @@ public final class VertxCloudEventsImpl implements VertxCloudEvents {
             request.bodyHandler((Buffer buff) -> {
 
                 if (buff.length()>0) {
-	                final String jsonString = buff.toString();
-	                final JsonObject json = new JsonObject(jsonString);
-	                final DefaultCloudEventImpl result = Json.decodeCloudEvent(jsonString);
+                    final String jsonString = buff.toString();
+                    final JsonObject json = new JsonObject(jsonString);
+                    final DefaultCloudEventImpl result = Json.decodeCloudEvent(jsonString);
 
 
-	                List<Extension> decodedExtensions = new ArrayList<>();
-	                if (extensions != null && extensions.length > 0) {
+                    List<Extension> decodedExtensions = new ArrayList<>();
+                    if (extensions != null && extensions.length > 0) {
 
-		                // move this out
-		                Arrays.asList(extensions).forEach(ext -> {
+                        // move this out
+                        Arrays.asList(extensions).forEach(ext -> {
 
-			                try {
-				                Object extObj  = ext.newInstance();
-				                Field[] fields = ext.getDeclaredFields();
+                            try {
+                                Object extObj  = ext.newInstance();
+                                Field[] fields = ext.getDeclaredFields();
 
-				                for (Field field : fields) {
-					                boolean accessible = field.isAccessible();
-					                field.setAccessible(true);
-					                field.set(extObj, json.getValue(field.getName()));
-					                field.setAccessible(accessible);
-				                }
-				                decodedExtensions.add((Extension) extObj);
-			                } catch (InstantiationException | IllegalAccessException e) {
-				                e.printStackTrace();
-			                }
-		                });
-	                }
-	                final CloudEventBuilder<T> eventBuilder = CloudEventBuilder.copyOf(result);
-	                decodedExtensions.forEach(eventBuilder::extension);
-	                resultHandler.handle(Future.succeededFuture(eventBuilder.build()));
+                                for (Field field : fields) {
+                                    boolean accessible = field.isAccessible();
+                                    field.setAccessible(true);
+                                    field.set(extObj, json.getValue(field.getName()));
+                                    field.setAccessible(accessible);
+                                }
+                                decodedExtensions.add((Extension) extObj);
+                            } catch (InstantiationException | IllegalAccessException e) {
+                                e.printStackTrace();
+                            }
+                        });
+                    }
+                    final CloudEventBuilder<T> eventBuilder = CloudEventBuilder.copyOf(result);
+                    decodedExtensions.forEach(eventBuilder::extension);
+                    resultHandler.handle(Future.succeededFuture(eventBuilder.build()));
                 } else {
                     throw new IllegalArgumentException("no cloudevent body");
                 }
@@ -234,9 +235,31 @@ public final class VertxCloudEventsImpl implements VertxCloudEvents {
             // read required headers
             request.putHeader(HttpHeaders.CONTENT_TYPE, STRUCTURED_TYPE);
             final String json = Json.encode(cloudEvent);
-            request.putHeader(HttpHeaders.CONTENT_LENGTH, HttpHeaders.createOptimized(String.valueOf(json.length())));
+            //Write extensions
+            final JsonObject jsonObject = new JsonObject(json);
+            cloudEvent.getExtensions().orElse(Collections.emptyList())
+                    .forEach(extension -> writeExtesion(extension, jsonObject));
             // this the body
-            request.write(json);
+            final String encode = jsonObject.encode();
+            request.putHeader(HttpHeaders.CONTENT_LENGTH, HttpHeaders.createOptimized(String.valueOf(encode.length())));
+            request.write(encode);
         }
     }
+
+    private void writeExtesion(final Extension extension, final JsonObject jsonObject) {
+        try {
+            Field[] fields = extension.getClass().getDeclaredFields();
+
+            for (Field field : fields) {
+                boolean accessible = field.isAccessible();
+                field.setAccessible(true);
+                jsonObject.put(field.getName(), field.get(extension));
+                field.setAccessible(accessible);
+            }
+
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
 }
