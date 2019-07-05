@@ -38,10 +38,7 @@ import java.lang.reflect.Field;
 import java.net.URI;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 public final class VertxCloudEventsImpl implements VertxCloudEvents {
 
@@ -219,7 +216,7 @@ public final class VertxCloudEventsImpl implements VertxCloudEvents {
             });
 
             cloudEvent.getExtensions().ifPresent(extensions -> {
-                extensions.forEach(ext -> {
+                extensions.stream().filter(Objects::nonNull).forEach(ext -> {
                     JsonObject.mapFrom(ext).forEach(extEntry -> {
                         request.putHeader(HttpHeaders.createOptimized(extEntry.getKey()), HttpHeaders.createOptimized(extEntry.getValue().toString()));
                     });
@@ -237,7 +234,7 @@ public final class VertxCloudEventsImpl implements VertxCloudEvents {
             final String json = Json.encode(cloudEvent);
             //Write extensions
             final JsonObject jsonObject = new JsonObject(json);
-            cloudEvent.getExtensions().orElse(Collections.emptyList())
+            cloudEvent.getExtensions().orElse(Collections.emptyList()).stream().filter(Objects::nonNull)
                     .forEach(extension -> writeExtesion(extension, jsonObject));
             // this the body
             final String encode = jsonObject.encode();
